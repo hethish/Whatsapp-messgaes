@@ -1,94 +1,112 @@
-// index.js
-import { Client, LocalAuth, MessageMedia } from "whatsapp-web.js";
-import qrcode from "qrcode-terminal";
+```js
+import express from "express";
+import bodyParser from "body-parser";
 import { google } from "googleapis";
-import fetch from "node-fetch";
+import qrcode from "qrcode-terminal";
+import pkg from "whatsapp-web.js";   // ✅ FIXED for CommonJS
+const { Client, LocalAuth, MessageMedia } = pkg;
 
-// ------------------- CONFIG -------------------
+// ================== CONFIG ==================
+const PORT = process.env.PORT || 3000;
+const SHEET_ID = process.env.SHEET_ID;   // Google Sheet ID
+const GOOGLE_CREDENTIALS = process.env.GOOGLE_CREDENTIALS; // Service account JSON
+// ============================================
 
-// Google Sheet ID
-const SHEET_ID = "1vmbeKbOd6u_RBuXSdUdGoyzH1eTANRsOvMN6q4g4TDY";
-const RANGE = "Sheet1!A2:E"; // Adjust if needed
+// Express server (keeps app alive on Render)
+const app = express();
+app.use(bodyParser.json());
+app.get("/", (req, res) => res.send("✅ WhatsApp + Google Sheets Bot is running!"));
 
-// Delay between messages (ms)
-const MESSAGE_DELAY = 3000;
+// ================== GOOGLE SHEETS ==================
+let sheetsClient;
 
-// ------------------- GOOGLE SHEETS SETUP -------------------
-const auth = new google.auth.GoogleAuth({
-  credentials: JSON.parse(process.env.GOOGLE_CREDENTIALS),
-  scopes: ["https://www.googleapis.com/auth/spreadsheets"],
-});
+async function authorizeSheets() {
+  if (!GOOGLE_CREDENTIALS) {
+    throw new Error("❌ GOOGLE_CREDENTIALS not found in environment variables.");
+  }
 
-const sheets = google.sheets({ version: "v4", auth });
+  const credentials = JSON.parse(GOOGLE_CREDENTIALS);
 
-// ------------------- WHATSAPP CLIENT -------------------
+  const auth = new google.auth.JWT(
+    credentials.client_email,
+    null,
+    credentials.private_key,
+    ["https://www.googleapis.com/auth/spreadsheets"]
+  );
+
+  sheetsClient = google.sheets({ version: "v4", auth });
+  console.log("📊 Google Sheets API initialized");
+}
+
+async function readSheetData() {
+  const res = await sheetsClient.spreadsheets.values.get({
+    spreadsheetId: SHEET_ID,
+    range: "Sheet1!A2:E", // Columns: Name | Number | Message | ImageURL | Status
+  });
+  return res.data.values || [];
+}
+
+async function updateStatus(row, status) {
+  await sheetsClient.spreadsheets.values.update({
+    spreadsheetId: SHEET_ID,
+    range: `Sheet1!E${row + 2}`,
+    valueInputOption: "RAW",
+    requestBody: { values: [[status]] },
+  });
+}
+
+// ================== WHATSAPP BOT ==================
 const client = new Client({
-  authStrategy: new LocalAuth(), // saves session to avoid scanning QR every time
-  puppeteer: { headless: true },
+  authStrategy: new LocalAuth(),
+  puppeteer: { headless: true, args: ["--no-sandbox", "--disable-setuid-sandbox"] },
 });
 
 client.on("qr", (qr) => {
+  console.log("📱 Scan this QR code with your WhatsApp:");
   qrcode.generate(qr, { small: true });
-  console.log("Scan the QR code above to log in to WhatsApp Web.");
 });
 
 client.on("ready", async () => {
-  console.log("✅ WhatsApp client is ready!");
+  console.log("🤖 WhatsApp Bot is ready!");
 
   try {
-    // Fetch rows from Google Sheets
-    const res = await sheets.spreadsheets.values.get({
-      spreadsheetId: SHEET_ID,
-      range: RANGE,
-    });
+    await authorizeSheets();
+    console.log("✅ Connected to Google Sheets");
+  } catch (err) {
+    console.error("❌ Google Sheets setup failed:", err.message);
+  }
 
-    const rows = res.data.values;
-    if (!rows || rows.length === 0) {
-      console.log("No data found in the sheet.");
-      return;
-    }
-
+  setInterval(async () => {
+    const rows = await readSheetData();
     for (let i = 0; i < rows.length; i++) {
       const [name, number, message, imageUrl, status] = rows[i];
+      if (status && status.toLowerCase() === "sent") continue;
 
-      if (status === "Sent") continue; // skip already sent
+      const chatId = number.includes("@c.us") ? number : `${number}@c.us`;
 
       try {
         if (imageUrl) {
-          // Send image with caption
           const media = await MessageMedia.fromUrl(imageUrl);
-          await client.sendMessage(number + "@c.us", media, { caption: message });
+          await client.sendMessage(chatId, media, { caption: message });
         } else {
-          // Send text only
-          await client.sendMessage(number + "@c.us", message);
+          await client.sendMessage(chatId, message);
         }
 
-        console.log(`✅ Sent to ${number}`);
-
-        // Update status in Google Sheets
-        await sheets.spreadsheets.values.update({
-          spreadsheetId: SHEET_ID,
-          range: `Sheet1!E${i + 2}`,
-          valueInputOption: "RAW",
-          requestBody: { values: [["Sent"]] },
-        });
+        console.log(`✅ Sent to ${number}: ${message}`);
+        await updateStatus(i, "Sent");
+        await new Promise((r) => setTimeout(r, 5000)); // Delay 5s between messages
       } catch (err) {
-        console.error(`❌ Failed for ${number}:`, err.message);
-
-        await sheets.spreadsheets.values.update({
-          spreadsheetId: SHEET_ID,
-          range: `Sheet1!E${i + 2}`,
-          valueInputOption: "RAW",
-          requestBody: { values: [["Failed"]] },
-        });
+        console.error(`❌ Failed to send to ${number}:`, err.message);
+        await updateStatus(i, "Failed");
       }
-
-      // Wait before next message
-      await new Promise((resolve) => setTimeout(resolve, MESSAGE_DELAY));
     }
-  } catch (err) {
-    console.error("Error reading Google Sheet:", err.message);
-  }
+  }, 30000); // Check every 30s
 });
 
 client.initialize();
+
+// ================== START EXPRESS ==================
+app.listen(PORT, () => {
+  console.log(`🚀 Server running on port ${PORT}`);
+});
+```
