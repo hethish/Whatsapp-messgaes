@@ -1,112 +1,56 @@
-```js
-import express from "express";
-import bodyParser from "body-parser";
-import { google } from "googleapis";
+// index.js
+
+// ---------------------- IMPORTS ----------------------
+import pkg from "whatsapp-web.js";
+const { Client, MessageMedia } = pkg;  // LocalAuth not needed for Render; sessionless
+
 import qrcode from "qrcode-terminal";
-import pkg from "whatsapp-web.js";   // ✅ FIXED for CommonJS
-const { Client, LocalAuth, MessageMedia } = pkg;
+import { google } from "googleapis";
 
-// ================== CONFIG ==================
-const PORT = process.env.PORT || 3000;
-const SHEET_ID = process.env.SHEET_ID;   // Google Sheet ID
-const GOOGLE_CREDENTIALS = process.env.GOOGLE_CREDENTIALS; // Service account JSON
-// ============================================
+// ---------------------- GOOGLE SHEETS SETUP ----------------------
+// Paste your service account credentials as one line JSON
+const SERVICE_ACCOUNT = {"type":"service_account","project_id":"whatsapp-messages-473312","private_key_id":"e114dcceebf97001f09e6d4c1cb87ba9e62b9422","private_key":"-----BEGIN PRIVATE KEY-----\\nMIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQCeoaXALwCh7ee7\\nj0Ju5bPFIaKdCqgUYX03Krst4+JM3ViIlR24iRiZJSQEtq0kB3/l2hQDPB37ROf8\\nV2kCmOkaMgiMsye08ApHN6h3wdNm9HPZLUzhIxfdGPKvbtJmYu0RmDW+L7Ud8PT/\\nPHTIxH9OKEgxrFk/wUoIY25VtmH65MI9s47QZ//OulC9VyA2t7VqTzArqMtU546K\\nN/QOVL+CH6VsG9VBAwxyXXbLBT1kH/i5AGAkH0p2dvFBYmzEdWfjrTd5TRoz3wra\\n3ValUUThtwvBllsd2dQpMfn08EIc/X3F1HSX+n1EH/gXeq6Nyj7vU4NFtPT0VzNZ\\ntDlRTnIzAgMBAAECggEAFA32Q9MCuXYM6IwL/LPS2QaPkFsF33hpDs261upgdGc8\\nsh0SoinIOlQ/ts4sGsn37rnLSJK+bO3L26hmq4q5WDPLG5Pqs9fvn2FMoxdAqrDC\\nP0qYKuj3iLQxZOHAfRaJ8hd+yTSEKUI1NwS69EbN8WDrqkanty+wia7zBqhawA/I\\neb4Nlknc6fCU1q+oy28a+qga42QtcAab0Qx1zGMvojXFqGOOZj6d6DsoeD6fvXqQ\\nxWClPRw0moOjhOKK/k9JasEyLX0PFiJ1MSAtcEd4ZNKmdyRdPUI5AOx5BOVclNg+\\nv0YDCSzwV4EwhkXxE1GSBZCDmRI89vuVHxFLvP+XAQKBgQDbvL2vokrJaJIWFYWV\\n9mMD1KRCxu0WS/L7Lezgzfqyz20ibFv6QBX7eJ9yLMJaaNLvtpMT/fNLNKUfuSSs\\nIdPlAHQlfNMwIkmunaZ9g0eMujyRQ3QaIdSI8eUylZPFPS0rutCuZfTE6X7EJ0Dn\\nhFft54HiScgm1XcBrJBbN0404wKBgQC4z1z32MUy0ivkaTl0ppXqtkh1kOz0Gg0C\\nr6sEpC7/bjmklyc3Otv2+XZQJrwW7aJzN8ZeGRvgkEBz6m7dCPoYCobc9vq4c2ul\\n9DYmpvQcdegLSXqHIm7lHUJBMRsFVX0n3zLVIkkniCWHF1P/xJC4TDXd/U9o5v7M\\n6INbzleecQKBgBE9j8x1+VQwJjYhXifT+xTT3Ed5ACUdtGTMx6cjwiXBbJik09qg\\nqJjgb/IvXNhnHRW9x3BsHmiqKsKAbkYrKUrwbCx8zL0cE5fluqhiYnzCJ/plxng+\\na0SLZiY/4iY5lI+3yqPEUB4bC90sD0Wa9qMt5NzyWQfi+8Ff3rupbTNtAoGAEsff\\n5r/8qkF5fGjFEfmr2oJTsr7blaLgF5nKg1o7/HEzImrJ7W7p05teTp7hFmNn0tWk\\nLwPWNWfzZNQ6F/RFlhPbyLDAoeX41pCOwDbPL+U7g4ogDYOOSXJDvWREHrKlWVvx\\nSn+Fd6L6TVQtkRxkqJX2E20emMaAtkoar0W02cECgYEAqWsbk0V5ju4z6ZUPGYRn\\nQL1OITHDTSgPOcXTNIMG3G4RpFVC3hZVhI7FiW2Vq3pA4DUGERELgME4eWHx2hp1\\nQbg27BwSRgSpcUFkyeJzU29dBPiNvw7A/H3V2lnXPiINLorK0QRhjbsxD2wAo5SA\\nfCNiWTAhVaCgdgV9z+JWH6k=\\n-----END PRIVATE KEY-----\\n","client_email":"hethish@whatsapp-messages-473312.iam.gserviceaccount.com","client_id":"114857743521017245905","auth_uri":"https://accounts.google.com/o/oauth2/auth","token_uri":"https://oauth2.googleapis.com/token","auth_provider_x509_cert_url":"https://www.googleapis.com/oauth2/v1/certs","client_x509_cert_url":"https://www.googleapis.com/robot/v1/metadata/x509/hethish%40whatsapp-messages-473312.iam.gserviceaccount.com","universe_domain":"googleapis.com"};
 
-// Express server (keeps app alive on Render)
-const app = express();
-app.use(bodyParser.json());
-app.get("/", (req, res) => res.send("✅ WhatsApp + Google Sheets Bot is running!"));
-
-// ================== GOOGLE SHEETS ==================
-let sheetsClient;
-
-async function authorizeSheets() {
-  if (!GOOGLE_CREDENTIALS) {
-    throw new Error("❌ GOOGLE_CREDENTIALS not found in environment variables.");
-  }
-
-  const credentials = JSON.parse(GOOGLE_CREDENTIALS);
-
-  const auth = new google.auth.JWT(
-    credentials.client_email,
-    null,
-    credentials.private_key,
-    ["https://www.googleapis.com/auth/spreadsheets"]
-  );
-
-  sheetsClient = google.sheets({ version: "v4", auth });
-  console.log("📊 Google Sheets API initialized");
-}
-
-async function readSheetData() {
-  const res = await sheetsClient.spreadsheets.values.get({
-    spreadsheetId: SHEET_ID,
-    range: "Sheet1!A2:E", // Columns: Name | Number | Message | ImageURL | Status
-  });
-  return res.data.values || [];
-}
-
-async function updateStatus(row, status) {
-  await sheetsClient.spreadsheets.values.update({
-    spreadsheetId: SHEET_ID,
-    range: `Sheet1!E${row + 2}`,
-    valueInputOption: "RAW",
-    requestBody: { values: [[status]] },
-  });
-}
-
-// ================== WHATSAPP BOT ==================
-const client = new Client({
-  authStrategy: new LocalAuth(),
-  puppeteer: { headless: true, args: ["--no-sandbox", "--disable-setuid-sandbox"] },
+const SCOPES = ["https://www.googleapis.com/auth/spreadsheets"];
+const auth = new google.auth.GoogleAuth({
+  credentials: SERVICE_ACCOUNT,
+  scopes: SCOPES
 });
+const sheets = google.sheets({ version: "v4", auth });
 
-client.on("qr", (qr) => {
-  console.log("📱 Scan this QR code with your WhatsApp:");
+// Replace with your sheet ID
+const SPREADSHEET_ID = "1vmbeKbOd6u_RBuXSdUdGoyzH1eTANRsOvMN6q4g4TDY";
+
+// ---------------------- WHATSAPP CLIENT ----------------------
+const client = new Client();
+
+client.on("qr", qr => {
   qrcode.generate(qr, { small: true });
 });
 
-client.on("ready", async () => {
-  console.log("🤖 WhatsApp Bot is ready!");
+client.on("ready", () => {
+  console.log("WhatsApp Bot is ready!");
+});
 
+client.on("message", async msg => {
+  console.log("Received message:", msg.body);
+
+  // Example: Save message to Google Sheet
   try {
-    await authorizeSheets();
-    console.log("✅ Connected to Google Sheets");
-  } catch (err) {
-    console.error("❌ Google Sheets setup failed:", err.message);
-  }
-
-  setInterval(async () => {
-    const rows = await readSheetData();
-    for (let i = 0; i < rows.length; i++) {
-      const [name, number, message, imageUrl, status] = rows[i];
-      if (status && status.toLowerCase() === "sent") continue;
-
-      const chatId = number.includes("@c.us") ? number : `${number}@c.us`;
-
-      try {
-        if (imageUrl) {
-          const media = await MessageMedia.fromUrl(imageUrl);
-          await client.sendMessage(chatId, media, { caption: message });
-        } else {
-          await client.sendMessage(chatId, message);
-        }
-
-        console.log(`✅ Sent to ${number}: ${message}`);
-        await updateStatus(i, "Sent");
-        await new Promise((r) => setTimeout(r, 5000)); // Delay 5s between messages
-      } catch (err) {
-        console.error(`❌ Failed to send to ${number}:`, err.message);
-        await updateStatus(i, "Failed");
+    const row = 0; // Append at first row (change logic if needed)
+    await sheets.spreadsheets.values.update({
+      spreadsheetId: SPREADSHEET_ID,
+      range: `Sheet1!A${row + 2}`, // backticks used properly
+      valueInputOption: "RAW",
+      requestBody: {
+        values: [[msg.from, msg.body]]
       }
-    }
-  }, 30000); // Check every 30s
+    });
+    console.log("Saved message to Google Sheet!");
+  } catch (err) {
+    console.error("Error saving to Google Sheet:", err);
+  }
 });
 
+// ---------------------- START BOT ----------------------
 client.initialize();
-
-// ================== START EXPRESS ==================
-app.listen(PORT, () => {
-  console.log(`🚀 Server running on port ${PORT}`);
-});
-```
